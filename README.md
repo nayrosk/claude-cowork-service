@@ -40,7 +40,25 @@ Claude Desktop → cowork-svc-linux → direct host execution (no VM)
 
 ## Installation
 
-### From AUR (Arch Linux)
+### Quick Install (Any Distro)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash
+```
+
+This downloads the pre-built binary, installs it to `/usr/local/bin/`, creates a systemd user service, and starts it.
+
+To install without root (uses `~/.local/bin/` instead):
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash -s -- --user
+```
+
+To uninstall:
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash -s -- --uninstall
+```
+
+### Arch Linux (AUR)
 
 ```bash
 yay -S claude-cowork-service
@@ -52,7 +70,8 @@ yay -S claude-cowork-service
 git clone https://github.com/patrickjaja/claude-cowork-service.git
 cd claude-cowork-service
 make
-sudo make install
+sudo make install                  # installs to /usr/bin (default)
+# or: sudo make PREFIX=/usr/local install  # installs to /usr/local/bin
 ```
 
 ## Quick Start

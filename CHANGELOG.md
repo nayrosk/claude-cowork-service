@@ -2,6 +2,15 @@
 
 All notable changes to claude-cowork-service will be documented in this file.
 
+## 0.2.0 — 2026-02-11
+
+### Added
+- **Universal install script** (`scripts/install.sh`) — one-liner install for any Linux distro, supports `--user` (no root) and `--uninstall`
+- **Makefile PREFIX/DESTDIR support** — GNU-convention variables for flexible install paths (`make PREFIX=/usr/local install`)
+
+### Changed
+- **README** — multi-distro installation docs (Quick Install, AUR, From Source)
+
 ## 0.1.0 — 2026-02-11
 
 Initial release.
