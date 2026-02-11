@@ -52,3 +52,73 @@ jobs:
             cowork-svc-linux
             cowork-svc-linux.sha256
           generate_release_notes: true
+
+  aur:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Update PKGBUILD version
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+          cat PKGBUILD
+
+      - name: Generate .SRCINFO
+        run: |
+          source PKGBUILD
+
+          cat > .SRCINFO << SRCEOF
+          pkgbase = ${pkgname}
+          	pkgdesc = ${pkgdesc}
+          	pkgver = ${pkgver}
+          	pkgrel = ${pkgrel}
+          	url = ${url}
+          	arch = ${arch[0]}
+          	license = ${license[0]}
+          	makedepends = go
+          	provides = claude-cowork-service
+          	source = ${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz
+          	sha256sums = SKIP
+
+          pkgname = ${pkgname}
+          SRCEOF
+
+          cat .SRCINFO
+
+      - name: Setup SSH for AUR
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t rsa aur.archlinux.org >> ~/.ssh/known_hosts
+
+          cat >> ~/.ssh/config << EOF
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Push to AUR
+        run: |
+          git config --global user.name "${{ secrets.AUR_USERNAME }}"
+          git config --global user.email "${{ secrets.AUR_EMAIL }}"
+
+          git clone ssh://aur@aur.archlinux.org/claude-cowork-service.git aur-repo
+
+          cp PKGBUILD .SRCINFO aur-repo/
+
+          cd aur-repo
+          git add PKGBUILD .SRCINFO
+          git diff --staged --quiet || {
+            git commit -m "Update to version ${{ steps.version.outputs.version }}"
+            git push origin master
+            echo "Successfully pushed to AUR"
+          }
