@@ -45,13 +45,31 @@ jobs:
       - name: Generate checksums
         run: sha256sum cowork-svc-linux > cowork-svc-linux.sha256
 
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract section matching this version (everything between this header and the next)
+          CONTENT=$(awk "/^## ${VERSION//./\\.}/ { found=1; next } /^## / { if (found) exit } found" CHANGELOG.md)
+          # Fallback: extract first section
+          if [ -z "$CONTENT" ]; then
+            CONTENT=$(awk 'BEGIN{f=0} /^## / { if (f) exit; f=1; next } f' CHANGELOG.md)
+          fi
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          echo "$CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: v${{ github.ref_name }}
           files: |
             cowork-svc-linux
             cowork-svc-linux.sha256
-          generate_release_notes: true
+          body: |
+            ${{ steps.changelog.outputs.content }}
+
+            **Install:** `yay -S claude-cowork-service`
 
   aur:
     needs: release
