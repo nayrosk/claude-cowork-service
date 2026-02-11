@@ -1,0 +1,8 @@
+cowork-svc-linux
+cowork-svc
+claude-cowork-service
+*.pkg.tar.zst
+pkg/
+src/
+.idea/
+.vscode/
