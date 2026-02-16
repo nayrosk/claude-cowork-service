@@ -102,6 +102,7 @@ jobs:
           	license = ${license[0]}
           	makedepends = go
           	provides = claude-cowork-service
+          	install = claude-cowork-service.install
           	source = ${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz
           	sha256sums = SKIP
 
@@ -134,10 +135,10 @@ jobs:
 
           git clone ssh://aur@aur.archlinux.org/claude-cowork-service.git aur-repo
 
-          cp PKGBUILD .SRCINFO aur-repo/
+          cp PKGBUILD .SRCINFO claude-cowork-service.install aur-repo/
 
           cd aur-repo
-          git add PKGBUILD .SRCINFO
+          git add PKGBUILD .SRCINFO claude-cowork-service.install
           git diff --staged --quiet || {
             git commit -m "Update to version ${{ steps.version.outputs.version }}"
             git push origin master

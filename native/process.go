@@ -3,7 +3,6 @@ package native
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -200,13 +199,6 @@ func (pt *processTracker) streamOutput(id string, r io.Reader, stream string) {
 			log.Printf("[native] %s %s: %s", id, stream, truncated)
 		}
 
-		// Intercept mcp_message control_requests from Claude Code and
-		// auto-respond with an error so it doesn't block waiting for us
-		// to proxy MCP connections.
-		if handled := pt.handleMcpRequest(id, line); handled {
-			continue // don't forward to client
-		}
-
 		// Always emit as stdout — Claude Desktop only processes stdout events,
 		// and Claude Code writes its stream-json data to stderr.
 		pt.emit(process.NewStdoutEvent(id, line))
@@ -214,54 +206,6 @@ func (pt *processTracker) streamOutput(id string, r io.Reader, stream string) {
 	if err := scanner.Err(); err != nil {
 		log.Printf("[native] %s %s scanner error: %v", id, stream, err)
 	}
-}
-
-// handleMcpRequest checks if a line is an mcp_message control_request from
-// Claude Code and auto-responds with an error on stdin so Claude Code
-// doesn't block. Returns true if the message was handled (intercepted).
-func (pt *processTracker) handleMcpRequest(id string, line string) bool {
-	var msg map[string]interface{}
-	if err := json.Unmarshal([]byte(line), &msg); err != nil {
-		return false
-	}
-	if msg["type"] != "control_request" {
-		return false
-	}
-	req, ok := msg["request"].(map[string]interface{})
-	if !ok || req["subtype"] != "mcp_message" {
-		return false
-	}
-	requestID, _ := msg["request_id"].(string)
-	serverName, _ := req["server_name"].(string)
-	if requestID == "" {
-		return false
-	}
-
-	if pt.debug {
-		log.Printf("[native] intercepted mcp_message for %q, sending error response", serverName)
-	}
-
-	// Send a control_response error back to Claude Code's stdin
-	resp := map[string]interface{}{
-		"type": "control_response",
-		"response": map[string]interface{}{
-			"subtype":    "error",
-			"request_id": requestID,
-			"error":      fmt.Sprintf("MCP server %q not available in native mode", serverName),
-		},
-	}
-	respBytes, err := json.Marshal(resp)
-	if err != nil {
-		return false
-	}
-	respBytes = append(respBytes, '\n')
-
-	if err := pt.writeStdin(id, respBytes); err != nil {
-		if pt.debug {
-			log.Printf("[native] failed to send mcp error response: %v", err)
-		}
-	}
-	return true
 }
 
 // kill sends SIGTERM to a process, falling back to SIGKILL.

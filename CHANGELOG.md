@@ -2,6 +2,17 @@
 
 All notable changes to claude-cowork-service will be documented in this file.
 
+## 0.3.2 — 2026-02-16
+
+### Fixed
+- **MCP server proxying (Browse, Web Search)** — Removed three interception points that blocked MCP traffic between Claude Code and Claude Desktop. Browse tool modals now stream content correctly in Cowork sessions.
+  - Removed `stripSdkMcpServers` from `WriteStdin` — Desktop's `sdkMcpServers` list now reaches Claude Code so it discovers Browse/Web Search tools
+  - Removed `handleMcpRequest` interception from `streamOutput` — MCP messages flow through to Desktop for proxying instead of being auto-errored
+  - `--mcp-config` stripping in `Spawn()` is intentionally kept (prevents direct stdio MCP connections)
+
+### Added
+- **Pacman post-upgrade hook** — `claude-cowork-service.install` automatically restarts the systemd user service after package upgrades via `yay`/`pacman`
+
 ## 0.3.1 — 2026-02-16
 
 ### Fixed
@@ -33,7 +44,7 @@ Initial release.
 - **Native Linux backend** — executes commands directly on the host via `os/exec`, no VM overhead
 - **Full RPC protocol** — 17 method handlers matching Windows `cowork-svc.exe` wire protocol (length-prefixed JSON over Unix socket)
 - **Session management** — creates session directories under `~/.local/share/claude-cowork/sessions/` with symlink-based path remapping for VM-compatible paths
-- **MCP server interception** — strips `sdkMcpServers` from initialize requests and auto-responds to `mcp_message` control requests to prevent Claude Code from blocking
+- **MCP message pass-through** — forwards MCP traffic between Claude Code and Claude Desktop for parent-proxied MCP servers (Browse, Web Search)
 - **Stream-json relay** — captures Claude Code stderr output (stream-json format) and emits it as stdout events back to Claude Desktop
 - **systemd user service** — `claude-cowork.service` with restart-on-failure
 - **CI/CD pipeline** — `go vet` + build + test on push; binary release + AUR publish on tag

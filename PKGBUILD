@@ -9,6 +9,7 @@ license=('MIT')
 depends=()
 makedepends=('go')
 provides=('claude-cowork-service')
+install=claude-cowork-service.install
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
 

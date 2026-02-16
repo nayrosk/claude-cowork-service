@@ -1,7 +1,6 @@
 package native
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -201,38 +200,7 @@ func (b *Backend) Kill(processID string) error {
 }
 
 func (b *Backend) WriteStdin(processID string, data []byte) error {
-	// Intercept the initialize control_request and strip sdkMcpServers
-	// so Claude Code doesn't try to proxy MCP connections through us.
-	data = stripSdkMcpServers(data)
 	return b.tracker.writeStdin(processID, data)
-}
-
-// stripSdkMcpServers removes the sdkMcpServers field from an initialize
-// control_request. This prevents Claude Code from trying to set up MCP
-// server connections that require the parent to act as a proxy.
-func stripSdkMcpServers(data []byte) []byte {
-	var msg map[string]interface{}
-	if err := json.Unmarshal(data, &msg); err != nil {
-		return data // not JSON, pass through
-	}
-	if msg["type"] != "control_request" {
-		return data
-	}
-	req, ok := msg["request"].(map[string]interface{})
-	if !ok || req["subtype"] != "initialize" {
-		return data
-	}
-	// Remove sdkMcpServers so Claude Code won't try to proxy them
-	delete(req, "sdkMcpServers")
-	modified, err := json.Marshal(msg)
-	if err != nil {
-		return data
-	}
-	// Preserve trailing newline if present
-	if len(data) > 0 && data[len(data)-1] == '\n' {
-		modified = append(modified, '\n')
-	}
-	return modified
 }
 
 func (b *Backend) IsProcessRunning(processID string) (bool, error) {
