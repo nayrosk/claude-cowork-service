@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"sync"
+	"sync/atomic"
 )
 
 // Handler dispatches RPC methods to the VM backend.
@@ -345,7 +347,15 @@ func (h *Handler) handleSubscribeEvents(conn net.Conn, req Request) {
 		json.Unmarshal(req.Params, &p)
 	}
 
+	var (
+		cancelled int32     // atomic flag to stop callbacks after write failure
+		writeMu   sync.Mutex // serialize concurrent event writes on this connection
+	)
+
 	cancel, err := h.backend.SubscribeEvents(p.Name, func(event interface{}) {
+		if atomic.LoadInt32(&cancelled) != 0 {
+			return
+		}
 		data, err := json.Marshal(event)
 		if err != nil {
 			if h.debug {
@@ -360,9 +370,13 @@ func (h *Handler) handleSubscribeEvents(conn net.Conn, req Request) {
 			}
 			log.Printf("EVENT → client: %s", truncated)
 		}
-		if err := WriteMessage(conn, data); err != nil {
+		writeMu.Lock()
+		werr := WriteMessage(conn, data)
+		writeMu.Unlock()
+		if werr != nil {
+			atomic.StoreInt32(&cancelled, 1)
 			if h.debug {
-				log.Printf("Failed to write event: %v", err)
+				log.Printf("Event write failed, cancelling subscription: %v", werr)
 			}
 		}
 	})

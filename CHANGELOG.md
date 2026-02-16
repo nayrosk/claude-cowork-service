@@ -2,6 +2,15 @@
 
 All notable changes to claude-cowork-service will be documented in this file.
 
+## 0.3.0 — 2026-02-16
+
+### Fixed
+- **Bidirectional path remapping on stdin/stdout** — Claude Desktop sends VM-style absolute paths (`/sessions/<name>/mnt/...`) in stdin messages (initialize, workspace folders) after spawn. These were not being rewritten, causing Claude Code to fail resolving paths. Now `writeStdin` replaces `/sessions/<name>` → real session dir (forward), and `streamOutput` replaces real paths → `/sessions/<name>` (reverse) so Desktop's path translator still works.
+
+### Fixed
+- **Concurrent event write safety** — `subscribeEvents` callbacks now serialize writes with a mutex and stop sending after the first write failure, preventing interleaved length-prefixed messages on the socket
+- **Atomic WriteMessage** — `WriteMessage` now writes length prefix + payload in a single `conn.Write` call to prevent partial writes from concurrent goroutines
+
 ## 0.2.0 — 2026-02-11
 
 ### Added

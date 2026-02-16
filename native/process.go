@@ -2,6 +2,7 @@ package native
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,17 +12,20 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/patrickjaja/claude-cowork-service/process"
 )
 
 // localProcess tracks a single spawned host process.
 type localProcess struct {
-	id    string
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	done  chan struct{}
-	mu    sync.Mutex
+	id         string
+	cmd        *exec.Cmd
+	stdin      io.WriteCloser
+	done       chan struct{}
+	mu         sync.Mutex
+	vmPrefix   []byte // e.g. "/sessions/optimistic-nice-brahmagupta"
+	realPrefix []byte // e.g. "/home/user/.local/share/claude-cowork/sessions/optimistic-nice-brahmagupta"
 }
 
 // processTracker manages all spawned processes and streams their output via event callbacks.
@@ -42,7 +46,7 @@ func newProcessTracker(emit func(event interface{}), debug bool) *processTracker
 }
 
 // spawn starts a new process and streams its stdout/stderr via events.
-func (pt *processTracker) spawn(id string, cmd string, args []string, env map[string]string, cwd string) (string, error) {
+func (pt *processTracker) spawn(id string, cmd string, args []string, env map[string]string, cwd string, vmPrefix string, realPrefix string) (string, error) {
 	if id == "" {
 		pt.mu.Lock()
 		pt.nextID++
@@ -100,6 +104,10 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 		stdin: stdin,
 		done:  make(chan struct{}),
 	}
+	if vmPrefix != "" && realPrefix != "" {
+		lp.vmPrefix = []byte(vmPrefix)
+		lp.realPrefix = []byte(realPrefix)
+	}
 
 	pt.mu.Lock()
 	pt.processes[id] = lp
@@ -151,10 +159,20 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 // Claude Code sends its stream-json output on stderr, so we emit both
 // stdout and stderr data as "stdout" events — that's what the client reads.
 func (pt *processTracker) streamOutput(id string, r io.Reader, stream string) {
+	// Look up process for reverse path mapping
+	pt.mu.RLock()
+	lp := pt.processes[id]
+	pt.mu.RUnlock()
+
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024) // 10MB max for large Opus stream-json lines
 	for scanner.Scan() {
 		line := scanner.Text() + "\n"
+
+		// Remap real paths back to VM paths in output
+		if lp != nil && lp.realPrefix != nil {
+			line = string(bytes.ReplaceAll([]byte(line), lp.realPrefix, lp.vmPrefix))
+		}
 		if pt.debug {
 			truncated := line
 			if len(truncated) > 200 {
@@ -173,6 +191,9 @@ func (pt *processTracker) streamOutput(id string, r io.Reader, stream string) {
 		// Always emit as stdout — Claude Desktop only processes stdout events,
 		// and Claude Code writes its stream-json data to stderr.
 		pt.emit(process.NewStdoutEvent(id, line))
+	}
+	if err := scanner.Err(); err != nil {
+		log.Printf("[native] %s %s scanner error: %v", id, stream, err)
 	}
 }
 
@@ -249,7 +270,7 @@ func (pt *processTracker) kill(processID string) error {
 	return nil
 }
 
-// writeStdin writes data to a process's stdin pipe.
+// writeStdin writes data to a process's stdin pipe with timeout and exit checks.
 func (pt *processTracker) writeStdin(processID string, data []byte) error {
 	pt.mu.RLock()
 	lp, ok := pt.processes[processID]
@@ -259,11 +280,36 @@ func (pt *processTracker) writeStdin(processID string, data []byte) error {
 		return fmt.Errorf("process %s not found", processID)
 	}
 
-	lp.mu.Lock()
-	defer lp.mu.Unlock()
+	// Remap VM paths to real paths in stdin data
+	if lp.vmPrefix != nil {
+		data = bytes.ReplaceAll(data, lp.vmPrefix, lp.realPrefix)
+	}
 
-	_, err := lp.stdin.Write(data)
-	return err
+	// Check if process already exited
+	select {
+	case <-lp.done:
+		return fmt.Errorf("process %s has exited", processID)
+	default:
+	}
+
+	// Write with timeout to avoid blocking forever if stdin buffer is full
+	type writeResult struct{ err error }
+	ch := make(chan writeResult, 1)
+	go func() {
+		lp.mu.Lock()
+		defer lp.mu.Unlock()
+		_, err := lp.stdin.Write(data)
+		ch <- writeResult{err}
+	}()
+
+	select {
+	case res := <-ch:
+		return res.err
+	case <-lp.done:
+		return fmt.Errorf("process %s exited during write", processID)
+	case <-time.After(10 * time.Second):
+		return fmt.Errorf("stdin write timeout for process %s", processID)
+	}
 }
 
 // isRunning checks if a tracked process is still running.

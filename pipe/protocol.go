@@ -53,19 +53,13 @@ func ReadMessage(conn net.Conn) ([]byte, error) {
 }
 
 // WriteMessage writes a length-prefixed JSON message to the connection.
+// Uses a single Write call to prevent interleaving with concurrent writers.
 func WriteMessage(conn net.Conn, data []byte) error {
-	// Write 4-byte length prefix (big-endian)
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
-
-	if _, err := conn.Write(lenBuf); err != nil {
-		return fmt.Errorf("writing length prefix: %w", err)
-	}
-	if _, err := conn.Write(data); err != nil {
-		return fmt.Errorf("writing payload: %w", err)
-	}
-
-	return nil
+	buf := make([]byte, 4+len(data))
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(data)))
+	copy(buf[4:], data)
+	_, err := conn.Write(buf)
+	return err
 }
 
 // WriteResponse serializes and sends a success Response.

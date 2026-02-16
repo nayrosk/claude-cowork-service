@@ -136,6 +136,9 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		os.Symlink(realSessionDir, topSessionDir)
 	}
 
+	// Session prefix used for path remapping (VM paths ↔ real paths)
+	sessionPrefix := "/sessions/" + name
+
 	// If /sessions isn't writable (no root), remap cwd and env to real paths
 	if _, err := os.Stat(cwd); err != nil {
 		remapped := filepath.Join(realSessionDir, filepath.Base(cwd))
@@ -149,7 +152,6 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		cwd = remapped
 
 		// Remap env vars and args pointing to /sessions/<name>
-		sessionPrefix := "/sessions/" + name
 		for k, v := range env {
 			if len(v) >= len(sessionPrefix) && v[:len(sessionPrefix)] == sessionPrefix {
 				env[k] = realSessionDir + v[len(sessionPrefix):]
@@ -188,7 +190,7 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		}
 	}
 
-	return b.tracker.spawn(id, cmd, args, env, cwd)
+	return b.tracker.spawn(id, cmd, args, env, cwd, sessionPrefix, realSessionDir)
 }
 
 func (b *Backend) Kill(processID string) error {
