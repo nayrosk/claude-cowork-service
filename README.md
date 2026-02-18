@@ -40,24 +40,6 @@ Claude Desktop → cowork-svc-linux → direct host execution (no VM)
 
 ## Installation
 
-### Quick Install (Any Distro)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash
-```
-
-This downloads the pre-built binary, installs it to `/usr/local/bin/`, creates a systemd user service, and starts it.
-
-To install without root (uses `~/.local/bin/` instead):
-```bash
-curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash -s -- --user
-```
-
-To uninstall:
-```bash
-curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash -s -- --uninstall
-```
-
 ### Debian / Ubuntu (APT Repository)
 
 ```bash
@@ -74,6 +56,26 @@ Updates are automatic via `sudo apt update && sudo apt upgrade`.
 
 ```bash
 yay -S claude-cowork-service
+```
+
+### Quick Install (Any Distro)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash
+```
+
+This downloads the pre-built binary, installs it to `/usr/local/bin/`, creates a systemd user service, and starts it.
+
+> **Note:** This method does not receive automatic updates. Re-run the command to update manually.
+
+To install without root (uses `~/.local/bin/` instead):
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash -s -- --user
+```
+
+To uninstall:
+```bash
+curl -fsSL https://raw.githubusercontent.com/patrickjaja/claude-cowork-service/main/scripts/install.sh | bash -s -- --uninstall
 ```
 
 ### From Source
