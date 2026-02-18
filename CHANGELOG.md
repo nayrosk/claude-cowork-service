@@ -2,7 +2,10 @@
 
 All notable changes to claude-cowork-service will be documented in this file.
 
-## 0.3.3 — 2026-02-18
+## 1.0.0 — 2026-02-18
+
+### Changed
+- **Stable release** — promoted from experimental to v1.0. Full Cowork sessions tested and working end-to-end.
 
 ### Added
 - **APT repository for Debian/Ubuntu** — CI now builds `.deb` packages and deploys a GPG-signed APT repository to GitHub Pages. Users can install via `curl -fsSL .../install.sh | sudo bash && sudo apt install claude-cowork-service`.

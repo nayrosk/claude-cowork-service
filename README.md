@@ -10,34 +10,6 @@ This daemon fills that gap. It implements the same length-prefixed JSON-over-Uni
 
 **Key insight:** The VM on macOS/Windows runs Linux anyway. On Linux, we skip the VM and execute natively — because we're already the target OS.
 
-## Status
-
-**Experimental** — working end-to-end. Full Cowork sessions with streamed responses in the Claude Desktop UI.
-
-## Architecture
-
-```
-┌─────────────────────────────┐
-│ Claude Desktop (Electron)   │
-│  patched with               │
-│  claude-desktop-bin          │
-└──────────┬──────────────────┘
-           │ Length-prefixed JSON
-           │ Unix socket
-┌──────────▼──────────────────┐
-│ cowork-svc-linux (this)     │
-│  native.Backend             │
-│  └─ os/exec on host         │
-└─────────────────────────────┘
-```
-
-Compare to Windows/macOS:
-```
-Claude Desktop → cowork-svc.exe → Hyper-V VM → sdk-daemon (vsock)
-Claude Desktop → cowork-svc     → Apple VM   → sdk-daemon (vsock)
-Claude Desktop → cowork-svc-linux → direct host execution (no VM)
-```
-
 ## Installation
 
 ### Debian / Ubuntu (APT Repository)
@@ -153,6 +125,41 @@ The daemon listens on `$XDG_RUNTIME_DIR/cowork-vm-service.sock` and handles 17 R
 
 Claude Desktop assumes a VM with paths like `/sessions/<name>/mnt/...`. The daemon remaps these to `~/.local/share/claude-cowork/sessions/<name>/` with symlinks for mount points.
 
+## Relationship to claude-desktop-bin
+
+This package is an **optional companion** to [claude-desktop-bin](https://github.com/patrickjaja/claude-desktop-bin) (the AUR package for Claude Desktop on Linux).
+
+- **Without this daemon:** Claude Desktop works fine for chat. The Cowork tab shows a helpful error message explaining how to install this package.
+- **With this daemon:** Cowork sessions work end-to-end.
+
+The JS patches in claude-desktop-bin that enable Cowork on Linux are:
+- `fix_cowork_linux.py` — extends TypeScript VM client to Linux, replaces Windows pipe with Unix socket
+- `fix_cowork_error_message.py` — shows Linux-specific guidance when daemon isn't running
+
+## Architecture
+
+```
+┌─────────────────────────────┐
+│ Claude Desktop (Electron)   │
+│  patched with               │
+│  claude-desktop-bin          │
+└──────────┬──────────────────┘
+           │ Length-prefixed JSON
+           │ Unix socket
+┌──────────▼──────────────────┐
+│ cowork-svc-linux (this)     │
+│  native.Backend             │
+│  └─ os/exec on host         │
+└─────────────────────────────┘
+```
+
+Compare to Windows/macOS:
+```
+Claude Desktop → cowork-svc.exe → Hyper-V VM → sdk-daemon (vsock)
+Claude Desktop → cowork-svc     → Apple VM   → sdk-daemon (vsock)
+Claude Desktop → cowork-svc-linux → direct host execution (no VM)
+```
+
 ## Protocol Discoveries
 
 During reverse engineering, we found 12 mismatches between the documented/expected protocol and what Claude Desktop actually sends. These are documented here for anyone building compatible implementations:
@@ -171,17 +178,6 @@ During reverse engineering, we found 12 mismatches between the documented/expect
 | 10 | Claude Code outputs stream-json on stderr, not stdout | Captured stdout was empty | Emit stderr as stdout events |
 | 11 | MCP proxy requests block Claude Code | Process hangs mid-conversation | Auto-respond with error to unblock |
 | 12 | Event field is `"id"` not `"processId"` | Events ignored, UI stuck on "Starting up..." | Fixed event JSON tags |
-
-## Relationship to claude-desktop-bin
-
-This package is an **optional companion** to [claude-desktop-bin](https://github.com/patrickjaja/claude-desktop-bin) (the AUR package for Claude Desktop on Linux).
-
-- **Without this daemon:** Claude Desktop works fine for chat. The Cowork tab shows a helpful error message explaining how to install this package.
-- **With this daemon:** Cowork sessions work end-to-end.
-
-The JS patches in claude-desktop-bin that enable Cowork on Linux are:
-- `fix_cowork_linux.py` — extends TypeScript VM client to Linux, replaces Windows pipe with Unix socket
-- `fix_cowork_error_message.py` — shows Linux-specific guidance when daemon isn't running
 
 ## VM Backend (Dormant)
 
