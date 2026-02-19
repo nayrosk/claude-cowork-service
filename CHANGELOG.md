@@ -2,6 +2,15 @@
 
 All notable changes to claude-cowork-service will be documented in this file.
 
+## Unreleased
+
+### Changed
+- Makefile: stop forcing `-s -w` so packagers can handle stripping/debug symbols.
+- Makefile: use overridable variables (`?=`) for GO/GOFLAGS/LDFLAGS/CGO_ENABLED.
+
+### Fixed
+- Arch/AUR packaging: avoid implicit `sudo` dependency by using `runuser` in post-upgrade restart logic.
+
 ## 1.0.0 — 2026-02-18
 
 ### Changed
