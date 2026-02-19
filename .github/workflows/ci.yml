@@ -194,6 +194,9 @@ jobs:
           echo ".SRCINFO:"
           cat .SRCINFO
 
+      - name: Fix workspace permissions after Docker
+        run: sudo chown -R $(id -u):$(id -g) .
+
       - name: Setup SSH for AUR
         run: |
           mkdir -p ~/.ssh
