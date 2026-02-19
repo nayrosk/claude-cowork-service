@@ -4,6 +4,13 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+## 1.0.3 — 2026-02-19
+
+> Community contribution by [@nayrosk](https://github.com/nayrosk)
+
+### Fixed
+- CI: Restore workspace ownership after `archlinux:base-devel` Docker container in the AUR `Generate .SRCINFO` step. The container's `chown -R builder:builder /pkg` was silently transferring ownership of `$GITHUB_WORKSPACE` to `root`, causing the subsequent `git clone` in "Push to AUR" to fail with `Permission denied`. Fixed by adding `sudo chown -R "$USER:$USER" .` immediately after the container exits.
+
 ## 1.0.2 — 2026-02-19
 
 > Community contribution by [@nayrosk](https://github.com/nayrosk) — [PR #1](https://github.com/patrickjaja/claude-cowork-service/pull/1)
