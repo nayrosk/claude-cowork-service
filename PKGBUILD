@@ -8,17 +8,17 @@ pkgdesc="Native Linux backend for Claude Desktop Cowork"
 arch=('x86_64')
 url="https://github.com/patrickjaja/claude-cowork-service"
 license=('MIT')
-
 depends=('systemd' 'util-linux')
 makedepends=('go')
-
+options=('debug')
 install="${pkgname}.install"
-
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
 sha256sums=('15b104b1c8db86dfa9821c05991a1173a41769c15ca3ba83c5d2895fb3e6040b')
 
 build() {
     cd "${srcdir}/${pkgname}-${pkgver}"
+    export CGO_ENABLED=1
+    export GOFLAGS="-trimpath"
     make VERSION="${pkgver}"
 }
 
