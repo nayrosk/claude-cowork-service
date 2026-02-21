@@ -4,6 +4,12 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+### Added
+- **RPM packaging** — `packaging/rpm/build-rpm.sh` + `claude-cowork-service.spec` for Fedora/RHEL; builds in `fedora:40` container during CI, `.rpm` included in GitHub Release assets
+- **NixOS packaging** — `flake.nix` + `packaging/nix/package.nix` (`buildGoModule`); `packaging/nix/module.nix` provides `services.claude-cowork.enable` for declarative NixOS config
+- **CI: RPM build/test** — Fedora container builds, installs, and verifies the `.rpm` before release
+- **CI: Nix build** — Validates `nix build` succeeds in the build job
+
 ## 1.0.4 — 2026-02-21
 
 ### Fixed

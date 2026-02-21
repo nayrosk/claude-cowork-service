@@ -31,6 +31,11 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Test Nix Build
+        uses: cachix/install-nix-action@v27
+      - name: Build with Nix
+        run: nix build .#claude-cowork-service --no-link --print-build-logs
+
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
@@ -62,6 +67,39 @@ jobs:
           echo "deb_file=$DEB_FILE" >> $GITHUB_OUTPUT
           echo "deb_sha256=$(cut -d' ' -f1 "${DEB_FILE}.sha256")" >> $GITHUB_OUTPUT
 
+      - name: Build RPM package
+        id: rpm
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          docker run --rm \
+            -v "$(pwd):/build:ro" \
+            -v "$(pwd)/rpm-out:/output" \
+            fedora:40 \
+            bash -c "
+              set -euo pipefail
+              dnf install -y rpm-build
+              cp /build/cowork-svc-linux /tmp/
+              cd /output
+              bash /build/packaging/rpm/build-rpm.sh /tmp/cowork-svc-linux $VERSION
+            "
+          RPM_FILE=$(ls rpm-out/claude-cowork-service-*.rpm)
+          sha256sum "$RPM_FILE" > "${RPM_FILE}.sha256"
+          echo "rpm_file=$RPM_FILE" >> $GITHUB_OUTPUT
+          echo "rpm_sha256=$(cut -d' ' -f1 "${RPM_FILE}.sha256")" >> $GITHUB_OUTPUT
+
+      - name: Test RPM package
+        run: |
+          docker run --rm \
+            -v "$(pwd)/rpm-out:/dist:ro" \
+            fedora:40 \
+            bash -c "
+              set -e
+              dnf install -y /dist/claude-cowork-service-*.rpm
+              cowork-svc-linux -version
+              test -f /usr/lib/systemd/user/claude-cowork.service
+              echo 'RPM test passed'
+            "
+
       - name: Extract changelog
         id: changelog
         run: |
@@ -85,6 +123,8 @@ jobs:
             cowork-svc-linux.sha256
             ${{ steps.deb.outputs.deb_file }}
             ${{ steps.deb.outputs.deb_file }}.sha256
+            ${{ steps.rpm.outputs.rpm_file }}
+            ${{ steps.rpm.outputs.rpm_file }}.sha256
           body: |
             ${{ steps.changelog.outputs.content }}
 
@@ -94,6 +134,18 @@ jobs:
             ```
             curl -fsSL https://patrickjaja.github.io/claude-cowork-service/install.sh | sudo bash
             sudo apt install claude-cowork-service
+            ```
+
+            **Fedora / RHEL (.rpm):**
+            ```
+            sudo dnf install ./claude-cowork-service-${{ github.ref_name }}-1.x86_64.rpm
+            ```
+
+            **NixOS:**
+            ```nix
+            # In flake.nix inputs:
+            claude-cowork-service.url = "github:patrickjaja/claude-cowork-service";
+            # Enable: services.claude-cowork.enable = true;
             ```
 
             **Arch Linux (AUR):** `yay -S claude-cowork-service`

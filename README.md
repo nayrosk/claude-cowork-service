@@ -24,10 +24,36 @@ sudo apt install claude-cowork-service
 
 Updates are automatic via `sudo apt update && sudo apt upgrade`.
 
+### Fedora / RHEL (.rpm)
+
+```bash
+# Download from GitHub Releases
+wget https://github.com/patrickjaja/claude-cowork-service/releases/latest/download/claude-cowork-service-1.0.0-1.x86_64.rpm
+sudo dnf install ./claude-cowork-service-*-1.x86_64.rpm
+```
+
 ### Arch Linux (AUR)
 
 ```bash
 yay -S claude-cowork-service
+```
+
+### NixOS
+
+```nix
+# In your flake.nix:
+{
+  inputs.claude-cowork-service.url = "github:patrickjaja/claude-cowork-service";
+
+  # In your NixOS configuration:
+  imports = [ inputs.claude-cowork-service.nixosModules.default ];
+  services.claude-cowork.enable = true;
+}
+```
+
+Or run directly with Nix:
+```bash
+nix run github:patrickjaja/claude-cowork-service
 ```
 
 ### Quick Install (Any Distro)
