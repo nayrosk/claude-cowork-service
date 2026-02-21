@@ -9,7 +9,7 @@ arch=('x86_64')
 url="https://github.com/patrickjaja/claude-cowork-service"
 license=('MIT')
 
-depends=('systemd' 'util-linux')
+depends=('systemd' 'util-linux' 'claude-code')
 makedepends=('go')
 
 install="${pkgname}.install"
