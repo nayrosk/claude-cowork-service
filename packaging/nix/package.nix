@@ -16,7 +16,7 @@ buildGoModule rec {
 
   vendorHash = null; # Pure stdlib, no external dependencies
 
-  CGO_ENABLED = 0;
+  env.CGO_ENABLED = 0;
 
   ldflags = [
     "-X main.version=${version}"
