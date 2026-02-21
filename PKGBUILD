@@ -3,13 +3,14 @@
 
 pkgname=claude-cowork-service
 pkgver=1.0.0
-pkgrel=3
+pkgrel=1
 pkgdesc="Native Linux backend for Claude Desktop Cowork"
 arch=('x86_64')
 url="https://github.com/patrickjaja/claude-cowork-service"
 license=('MIT')
 
 depends=('systemd' 'util-linux' 'claude-code')
+optdepends=('claude-desktop-bin: Unofficial Linux frontend for Claude Desktop Cowork')
 makedepends=('go')
 
 install="${pkgname}.install"
