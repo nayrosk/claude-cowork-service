@@ -32,11 +32,15 @@ wget https://github.com/patrickjaja/claude-cowork-service/releases/latest/downlo
 sudo dnf install ./claude-cowork-service-*-1.x86_64.rpm
 ```
 
+> **Note:** No automatic updates. Download the latest `.rpm` from [GitHub Releases](https://github.com/patrickjaja/claude-cowork-service/releases) to update.
+
 ### Arch Linux (AUR)
 
 ```bash
 yay -S claude-cowork-service
 ```
+
+Updates arrive through your AUR helper (e.g. `yay -Syu`).
 
 ### NixOS
 
@@ -55,6 +59,8 @@ Or run directly with Nix:
 ```bash
 nix run github:patrickjaja/claude-cowork-service
 ```
+
+> **Note:** Update by running `nix flake update` to pull the latest version. `nix run` always fetches the latest.
 
 ### Quick Install (Any Distro)
 
@@ -85,6 +91,8 @@ make
 sudo make install                  # installs to /usr/bin (default)
 # or: sudo make PREFIX=/usr/local install  # installs to /usr/local/bin
 ```
+
+> **Note:** No automatic updates. Pull and rebuild to update: `git pull && make && sudo make install`.
 
 ## Quick Start
 
