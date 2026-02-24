@@ -129,13 +129,16 @@ jobs:
 
           # Replace "## Unreleased" with versioned heading, add new empty Unreleased section
           if grep -q '^## Unreleased' CHANGELOG.md; then
-            sed -i "s/^## Unreleased$/## ${VERSION} — ${DATE}/" CHANGELOG.md
-            sed -i "/^## ${VERSION//./\\.} — ${DATE}$/i ## Unreleased\n" CHANGELOG.md
+            awk -v ver="## ${VERSION} — ${DATE}" '
+              /^## Unreleased/ { print "## Unreleased"; print ""; print ver; next }
+              { print }
+            ' CHANGELOG.md > CHANGELOG.tmp && mv CHANGELOG.tmp CHANGELOG.md
             git add CHANGELOG.md
             git commit -m "Release ${RELEASE_VERSION}: update CHANGELOG"
             git push origin main
           fi
 
+          # Tag the commit that includes the CHANGELOG update
           git tag -a "${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}"
           git push origin "${RELEASE_VERSION}"
 
