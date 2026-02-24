@@ -7,3 +7,5 @@ src/
 .idea/
 .vscode/
 result
+cowork-svc.exe
+.cowork-svc-version

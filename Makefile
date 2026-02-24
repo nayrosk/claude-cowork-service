@@ -12,8 +12,12 @@ all: build
 build:
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
+extract-cowork-svc:
+	bash scripts/extract-cowork-svc.sh
+
 clean:
 	rm -f $(BINARY)
+	rm -f cowork-svc.exe .cowork-svc-version
 
 install: build
 	install -Dm755 $(BINARY) $(DESTDIR)$(PREFIX)/bin/$(BINARY)
@@ -29,4 +33,4 @@ lint:
 test:
 	$(GO) test ./...
 
-.PHONY: all build clean install uninstall lint test
+.PHONY: all build clean install uninstall lint test extract-cowork-svc
