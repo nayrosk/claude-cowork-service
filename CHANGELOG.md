@@ -11,10 +11,26 @@ All notable changes to claude-cowork-service will be documented in this file.
 - **NixOS packaging** — `flake.nix` + `packaging/nix/package.nix` (`buildGoModule`); `packaging/nix/module.nix` provides `services.claude-cowork.enable` for declarative NixOS config
 - **CI: RPM build/test** — Fedora container builds, installs, and verifies the `.rpm` before release
 - **CI: Nix build** — Validates `nix build` succeeds in the build job
+- **Signal handling** — `kill` RPC now accepts a `signal` parameter (SIGTERM, SIGKILL, SIGINT, etc.); exit events report signal name when process is killed by a signal
+- **Error events** — New `ErrorEvent` type emitted on process start failures and scanner errors
+- **Debug spawn logging** — Full arg/cwd dump in debug mode for easier troubleshooting
+- **Skill name stripping** — `writeStdin` strips plugin prefixes from skill invocations (e.g. `document-skills:pdf` → `/pdf`) so the CLI resolves skills by bare name
+- **Mount path remapping** — `writeStdin` remaps `<sessionDir>/mnt/<mount>` paths to their real host targets; Glob doesn't follow directory symlinks, so the model must receive real paths
+- **Workspace cwd override** — Detect the user's workspace mount and set the CLI's cwd to the real project directory instead of the session directory
+- **Conditional reverse-mapping** — Only reverse-map output paths (real→VM) if the VM path (`/sessions/...`) actually exists on the filesystem; without root access, reverse-mapping is disabled so the model sees real paths it can use for tool calls
+- **Nested CLI env stripping** — Strip `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` env vars from spawned processes to prevent "cannot launch inside another session" errors
 
 ### Fixed
 - Revert env var filtering that stripped `CLAUDE_CODE_OAUTH_TOKEN` from app-provided
   environment, causing "Not logged in" errors in Cowork sessions.
+- **apiReachability event schema** — Renamed from `apiReachable` to `apiReachability`; field changed from `reachable: bool` to `reachability: "reachable"|"unreachable"` + `willTryRecover: bool` to match client expectations
+- **Exit event schema** — Field renamed from `code` to `exitCode`; added `signal` and `oomKillCount` fields to match client schema
+- **getDownloadStatus** — Return `"ready"` (lowercase) instead of `"Ready"` to match client validation
+- **configure params** — Accept `memoryMB`/`cpuCount` (client schema) instead of `memory`/`cpus`
+- **createVM/startVM params** — Accept `bundlePath`/`diskSizeGB`/`memoryGB` fields; extract VM name from `bundlePath` when `name` is empty
+- **kill params** — Accept `signal` field alongside process `id`
+- **Unknown RPC methods** — Return success instead of error for unrecognized methods (forward compatibility)
+- **Scanner buffer** — Increased from default to 10MB max to handle large Opus stream-json lines
 
 ## 1.0.4 — 2026-02-21
 

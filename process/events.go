@@ -18,16 +18,30 @@ type StderrEvent struct {
 }
 
 // ExitEvent is emitted when a process exits.
+// Client reads a.exitCode, a.signal, a.oomKillCount.
 type ExitEvent struct {
-	Type      string `json:"type"`
-	ProcessID string `json:"id"`
-	Code      int    `json:"code"`
+	Type         string `json:"type"`
+	ProcessID    string `json:"id"`
+	ExitCode     int    `json:"exitCode"`
+	Signal       string `json:"signal,omitempty"`
+	OOMKillCount int    `json:"oomKillCount,omitempty"`
 }
 
 // APIReachableEvent is emitted when the API becomes reachable from inside the VM.
+// Client validates: { reachability: "unknown"|"reachable"|"probably_unreachable"|"unreachable", willTryRecover: bool }
 type APIReachableEvent struct {
+	Type           string `json:"type"`
+	Reachability   string `json:"reachability"`
+	WillTryRecover bool   `json:"willTryRecover"`
+}
+
+// ErrorEvent is emitted when a process-level error occurs.
+// Client handles case "error" events with {id, message, fatal} fields.
+type ErrorEvent struct {
 	Type      string `json:"type"`
-	Reachable bool   `json:"reachable"`
+	ProcessID string `json:"id"`
+	Message   string `json:"message"`
+	Fatal     bool   `json:"fatal"`
 }
 
 // NewStdoutEvent creates a stdout event.
@@ -42,10 +56,24 @@ func NewStderrEvent(processID, data string) StderrEvent {
 
 // NewExitEvent creates an exit event.
 func NewExitEvent(processID string, code int) ExitEvent {
-	return ExitEvent{Type: "exit", ProcessID: processID, Code: code}
+	return ExitEvent{Type: "exit", ProcessID: processID, ExitCode: code}
+}
+
+// NewExitEventWithSignal creates an exit event for signal-caused exits.
+func NewExitEventWithSignal(processID string, code int, signal string) ExitEvent {
+	return ExitEvent{Type: "exit", ProcessID: processID, ExitCode: code, Signal: signal}
 }
 
 // NewAPIReachableEvent creates an API reachability event.
 func NewAPIReachableEvent(reachable bool) APIReachableEvent {
-	return APIReachableEvent{Type: "apiReachable", Reachable: reachable}
+	reachability := "unreachable"
+	if reachable {
+		reachability = "reachable"
+	}
+	return APIReachableEvent{Type: "apiReachability", Reachability: reachability, WillTryRecover: false}
+}
+
+// NewErrorEvent creates a process error event.
+func NewErrorEvent(processID string, message string, fatal bool) ErrorEvent {
+	return ErrorEvent{Type: "error", ProcessID: processID, Message: message, Fatal: fatal}
 }

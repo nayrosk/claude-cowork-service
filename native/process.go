@@ -9,12 +9,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/patrickjaja/claude-cowork-service/process"
 )
+
+// pathRemap represents a from→to byte replacement for path remapping.
+type pathRemap struct {
+	from []byte
+	to   []byte
+}
 
 // localProcess tracks a single spawned host process.
 type localProcess struct {
@@ -25,6 +33,8 @@ type localProcess struct {
 	mu         sync.Mutex
 	vmPrefix   []byte // e.g. "/sessions/optimistic-nice-brahmagupta"
 	realPrefix []byte // e.g. "/home/user/.local/share/claude-cowork/sessions/optimistic-nice-brahmagupta"
+	reverseMap bool   // only reverse-map output if VM path exists on filesystem
+	mountRemap []pathRemap // remap session/mnt/<mount> paths to real mount targets
 }
 
 // processTracker manages all spawned processes and streams their output via event callbacks.
@@ -45,7 +55,7 @@ func newProcessTracker(emit func(event interface{}), debug bool) *processTracker
 }
 
 // spawn starts a new process and streams its stdout/stderr via events.
-func (pt *processTracker) spawn(id string, cmd string, args []string, env map[string]string, cwd string, vmPrefix string, realPrefix string) (string, error) {
+func (pt *processTracker) spawn(id string, cmd string, args []string, env map[string]string, cwd string, vmPrefix string, realPrefix string, mountRemap []pathRemap) (string, error) {
 	if id == "" {
 		pt.mu.Lock()
 		pt.nextID++
@@ -102,6 +112,22 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 		}
 	}
 
+	// Strip env vars that prevent nested Claude Code execution.
+	// When cowork-svc is started from within a Claude Code session, it inherits
+	// CLAUDECODE/CLAUDE_CODE_ENTRYPOINT which cause spawned CLI instances to
+	// refuse to start ("cannot be launched inside another Claude Code session").
+	if c.Env == nil {
+		c.Env = os.Environ()
+	}
+	for i := len(c.Env) - 1; i >= 0; i-- {
+		for _, prefix := range []string{"CLAUDECODE=", "CLAUDE_CODE_ENTRYPOINT="} {
+			if strings.HasPrefix(c.Env[i], prefix) {
+				c.Env = append(c.Env[:i], c.Env[i+1:]...)
+				break
+			}
+		}
+	}
+
 	// Set up process group so we can kill children too
 	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
@@ -121,18 +147,28 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 	}
 
 	if err := c.Start(); err != nil {
+		pt.emit(process.NewErrorEvent(id, fmt.Sprintf("failed to start process: %v", err), true))
 		return "", fmt.Errorf("starting process: %w", err)
 	}
 
 	lp := &localProcess{
-		id:    id,
-		cmd:   c,
-		stdin: stdin,
-		done:  make(chan struct{}),
+		id:         id,
+		cmd:        c,
+		stdin:      stdin,
+		done:       make(chan struct{}),
+		mountRemap: mountRemap,
 	}
 	if vmPrefix != "" && realPrefix != "" {
 		lp.vmPrefix = []byte(vmPrefix)
 		lp.realPrefix = []byte(realPrefix)
+		// Only reverse-map output if the VM path exists on the filesystem.
+		// Without root, /sessions/<name> can't be created, so reverse-mapping
+		// would produce paths the model can't access for tool calls.
+		if _, err := os.Stat(vmPrefix); err == nil {
+			lp.reverseMap = true
+		} else if pt.debug {
+			log.Printf("[native] VM path %s not accessible, disabling output reverse-mapping", vmPrefix)
+		}
 	}
 
 	pt.mu.Lock()
@@ -141,6 +177,13 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 
 	if pt.debug {
 		log.Printf("[native] spawned %s: %s %v (pid=%d)", id, cmd, args, c.Process.Pid)
+		log.Printf("[native] === FULL SPAWN ARGS for %s ===", id)
+		log.Printf("[native]   cmd: %s", cmd)
+		for i, a := range args {
+			log.Printf("[native]   arg[%d]: %s", i, a)
+		}
+		log.Printf("[native]   cwd: %s", cwd)
+		log.Printf("[native] === END ARGS ===")
 	}
 
 	// Stream stdout/stderr in goroutines
@@ -162,19 +205,32 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 		wg.Wait() // wait for output streams to drain first
 		err := c.Wait()
 		code := 0
+		sig := ""
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				code = exitErr.ExitCode()
+				// Detect signal-caused exits
+				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+					sig = signalName(status.Signal())
+				}
 			} else {
 				code = -1
 			}
 		}
 
 		if pt.debug {
-			log.Printf("[native] %s exited with code %d", id, code)
+			if sig != "" {
+				log.Printf("[native] %s exited with code %d (signal=%s)", id, code, sig)
+			} else {
+				log.Printf("[native] %s exited with code %d", id, code)
+			}
 		}
 
-		pt.emit(process.NewExitEvent(id, code))
+		if sig != "" {
+			pt.emit(process.NewExitEventWithSignal(id, code, sig))
+		} else {
+			pt.emit(process.NewExitEvent(id, code))
+		}
 		close(lp.done)
 	}()
 
@@ -195,16 +251,22 @@ func (pt *processTracker) streamOutput(id string, r io.Reader, stream string) {
 	for scanner.Scan() {
 		line := scanner.Text() + "\n"
 
-		// Remap real paths back to VM paths in output
-		if lp != nil && lp.realPrefix != nil {
+		// Remap real paths back to VM paths in output (only if VM path exists)
+		if lp != nil && lp.reverseMap {
 			line = string(bytes.ReplaceAll([]byte(line), lp.realPrefix, lp.vmPrefix))
 		}
 		if pt.debug {
 			truncated := line
-			if len(truncated) > 200 {
-				truncated = truncated[:200] + "..."
+			maxLen := 2000
+			if len(truncated) > maxLen {
+				truncated = truncated[:maxLen] + "...[TRUNCATED]"
 			}
-			log.Printf("[native] %s %s: %s", id, stream, truncated)
+			// Highlight skill-related messages
+			if strings.Contains(strings.ToLower(line), "skill") || strings.Contains(line, "Unknown") {
+				log.Printf("[native] !!SKILL!! %s %s: %s", id, stream, truncated)
+			} else {
+				log.Printf("[native] %s %s: %s", id, stream, truncated)
+			}
 		}
 
 		// Always emit as stdout — Claude Desktop only processes stdout events,
@@ -213,11 +275,12 @@ func (pt *processTracker) streamOutput(id string, r io.Reader, stream string) {
 	}
 	if err := scanner.Err(); err != nil {
 		log.Printf("[native] %s %s scanner error: %v", id, stream, err)
+		pt.emit(process.NewErrorEvent(id, fmt.Sprintf("%s scanner error: %v", stream, err), false))
 	}
 }
 
-// kill sends SIGTERM to a process, falling back to SIGKILL.
-func (pt *processTracker) kill(processID string) error {
+// kill sends a signal to a process. If signal is empty, defaults to SIGTERM.
+func (pt *processTracker) kill(processID string, signal string) error {
 	pt.mu.RLock()
 	lp, ok := pt.processes[processID]
 	pt.mu.RUnlock()
@@ -230,15 +293,66 @@ func (pt *processTracker) kill(processID string) error {
 		return nil
 	}
 
+	sig := mapSignal(signal)
+
 	// Kill the entire process group
 	pgid, err := syscall.Getpgid(lp.cmd.Process.Pid)
 	if err == nil {
-		syscall.Kill(-pgid, syscall.SIGTERM)
+		syscall.Kill(-pgid, sig)
 	} else {
-		lp.cmd.Process.Signal(syscall.SIGTERM)
+		lp.cmd.Process.Signal(sig)
 	}
 
 	return nil
+}
+
+// mapSignal maps a signal name string to a syscall.Signal.
+// Defaults to SIGTERM if the signal is empty or unrecognized.
+func mapSignal(name string) syscall.Signal {
+	switch strings.ToUpper(strings.TrimPrefix(strings.ToUpper(name), "SIG")) {
+	case "KILL":
+		return syscall.SIGKILL
+	case "INT":
+		return syscall.SIGINT
+	case "QUIT":
+		return syscall.SIGQUIT
+	case "HUP":
+		return syscall.SIGHUP
+	case "USR1":
+		return syscall.SIGUSR1
+	case "USR2":
+		return syscall.SIGUSR2
+	default:
+		return syscall.SIGTERM
+	}
+}
+
+// signalName returns the name of a signal (e.g. "SIGTERM").
+func signalName(sig syscall.Signal) string {
+	switch sig {
+	case syscall.SIGTERM:
+		return "SIGTERM"
+	case syscall.SIGKILL:
+		return "SIGKILL"
+	case syscall.SIGINT:
+		return "SIGINT"
+	case syscall.SIGQUIT:
+		return "SIGQUIT"
+	case syscall.SIGHUP:
+		return "SIGHUP"
+	case syscall.SIGUSR1:
+		return "SIGUSR1"
+	case syscall.SIGUSR2:
+		return "SIGUSR2"
+	case syscall.SIGPIPE:
+		return "SIGPIPE"
+	case syscall.SIGABRT:
+		return "SIGABRT"
+	case syscall.SIGSEGV:
+		return "SIGSEGV"
+	default:
+		return fmt.Sprintf("SIG%d", int(sig))
+	}
 }
 
 // writeStdin writes data to a process's stdin pipe with timeout and exit checks.
@@ -254,6 +368,28 @@ func (pt *processTracker) writeStdin(processID string, data []byte) error {
 	// Remap VM paths to real paths in stdin data
 	if lp.vmPrefix != nil {
 		data = bytes.ReplaceAll(data, lp.vmPrefix, lp.realPrefix)
+	}
+
+	// Remap session/mnt/<mount> paths to real mount targets.
+	// Glob doesn't follow directory symlinks, so the model must see
+	// the real target paths instead of symlinked mnt/ paths.
+	for _, rm := range lp.mountRemap {
+		data = bytes.ReplaceAll(data, rm.from, rm.to)
+	}
+
+	// Strip plugin prefix from skill invocations in user messages.
+	// The Cowork UI sends "/document-skills:pdf ..." but the CLI expects
+	// just "/pdf ..." (bare skill name). The plugin prefix in the UI
+	// (from marketplace.json) doesn't match the CLI's plugin.json name,
+	// so we strip it to let the CLI resolve by userFacingName().
+	if bytes.Contains(data, []byte(`"content":"/`)) {
+		re := regexp.MustCompile(`"content":"/[a-zA-Z0-9_-]+:`)
+		if re.Match(data) {
+			if pt.debug {
+				log.Printf("[native] stripping skill plugin prefix from user message")
+			}
+			data = re.ReplaceAll(data, []byte(`"content":"/`))
+		}
 	}
 
 	// Check if process already exited
@@ -311,6 +447,6 @@ func (pt *processTracker) killAll() {
 	pt.mu.RUnlock()
 
 	for _, id := range ids {
-		pt.kill(id)
+		pt.kill(id, "")
 	}
 }

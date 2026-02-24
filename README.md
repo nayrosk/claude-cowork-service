@@ -1,6 +1,6 @@
 # claude-cowork-service
 
-Native Linux backend for Claude Desktop's **Cowork** feature. Reverse-engineered from Windows `cowork-svc.exe`.
+Native Linux backend for Claude Desktop's **Cowork** feature. Reverse-engineered from Windows [`cowork-svc.exe`](https://github.com/anthropics/cowork-win32-service) bundled with Claude Desktop v1.1.4173.
 
 ## What This Is
 
@@ -128,12 +128,12 @@ The daemon listens on `$XDG_RUNTIME_DIR/cowork-vm-service.sock` and handles 17 R
 |--------|-------------|
 | `configure` | Accepts VM config (ignored — no VM) |
 | `createVM` | Creates session directory |
-| `startVM` | Emits `vmStarted` + `apiReachable` events |
+| `startVM` | Emits `vmStarted` + `apiReachability` events |
 | `stopVM` | Kills all spawned processes, cleans up |
 | `isRunning` | Returns `true` after startVM |
 | `isGuestConnected` | Returns `true` after startVM |
 | `spawn` | Runs command via `os/exec` on host |
-| `kill` | Kills a spawned process |
+| `kill` | Kills a spawned process (supports signal: SIGTERM, SIGKILL, etc.) |
 | `writeStdin` | Writes data to a process's stdin |
 | `isProcessRunning` | Checks if a process is alive |
 | `mountPath` | Creates symlink (no real mount needed) |
@@ -142,12 +142,12 @@ The daemon listens on `$XDG_RUNTIME_DIR/cowork-vm-service.sock` and handles 17 R
 | `addApprovedOauthToken` | Stores OAuth token for spawned processes |
 | `setDebugLogging` | Toggles verbose logging |
 | `subscribeEvents` | Streams process stdout/stderr/exit events |
-| `getDownloadStatus` | Returns "downloaded" (no bundle needed) |
+| `getDownloadStatus` | Returns `"ready"` (no bundle needed) |
 
 ### What happens during a Cowork session
 
 1. Claude Desktop calls `stopVM` (cleanup), `subscribeEvents`, `startVM`
-2. Daemon emits `vmStarted` and `apiReachable` events
+2. Daemon emits `vmStarted` and `apiReachability` events
 3. Claude Desktop calls `spawn` with `/usr/local/bin/claude` and OAuth credentials
 4. Daemon remaps the path, resolves the binary, starts `claude` via `os/exec`
 5. Claude Desktop sends `writeStdin` with an `initialize` control request, then user messages
@@ -205,7 +205,7 @@ During reverse engineering, we found 12 mismatches between the documented/expect
 | 3 | Binary path `/usr/local/bin/claude` doesn't exist on host | exec.Command failed | Fallback to `exec.LookPath` |
 | 4 | `/sessions/<name>` requires root to create | mkdir failed | Remap to `~/.local/share/claude-cowork/sessions/` |
 | 5 | `subscribeEvents` races with `startVM` | Startup events lost, client stuck | Delay event emission by 500ms |
-| 6 | Client needs `apiReachable` event (not just `isGuestConnected`) | Client stuck after boot | Emit `apiReachable` during startVM |
+| 6 | Client needs `apiReachability` event (not just `isGuestConnected`) | Client stuck after boot | Emit `apiReachability` during startVM |
 | 7 | Args also contain VM paths (not just cwd/env) | `--plugin-dir /sessions/...` unresolvable | Remap args too |
 | 8 | Empty env vars (`ANTHROPIC_API_KEY=""`) break auth | Valid OAuth token ignored | Strip empty env vars |
 | 9 | `sdkMcpServers` in MCP config blocks Claude Code | Process hangs at init — zero output | Strip SDK servers from config |

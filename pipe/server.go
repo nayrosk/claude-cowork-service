@@ -10,14 +10,14 @@ import (
 // VMBackend defines the interface that the VM manager must implement.
 // This decouples the pipe server from the VM implementation.
 type VMBackend interface {
-	Configure(memory int, cpus int) error
+	Configure(memoryMB int, cpuCount int) error
 	CreateVM(name string) error
 	StartVM(name string) error
 	StopVM(name string) error
 	IsRunning(name string) (bool, error)
 	IsGuestConnected(name string) (bool, error)
 	Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]string) (string, error)
-	Kill(processID string) error
+	Kill(processID string, signal string) error
 	WriteStdin(processID string, data []byte) error
 	IsProcessRunning(processID string) (bool, error)
 	MountPath(name string, hostPath string, guestPath string) error

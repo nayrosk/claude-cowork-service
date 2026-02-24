@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,19 +34,19 @@ func NewBackend(debug bool) *Backend {
 	return b
 }
 
-func (b *Backend) Configure(memory int, cpus int) error {
+func (b *Backend) Configure(memoryMB int, cpuCount int) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if memory > 0 {
-		b.memory = memory
+	if memoryMB > 0 {
+		b.memory = memoryMB
 	}
-	if cpus > 0 {
-		b.cpus = cpus
+	if cpuCount > 0 {
+		b.cpus = cpuCount
 	}
 
 	if b.debug {
-		log.Printf("[native] configured: memory=%dMB, cpus=%d (ignored, running natively)", b.memory, b.cpus)
+		log.Printf("[native] configured: memoryMB=%d, cpuCount=%d (ignored, running natively)", b.memory, b.cpus)
 	}
 	return nil
 }
@@ -169,6 +170,24 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		}
 	}
 
+	// Use the real workspace directory as cwd instead of the session directory.
+	// The session's mnt/ dir uses symlinks for mounts, but Glob doesn't follow
+	// directory symlinks, so files aren't found. Setting cwd to the actual
+	// workspace path lets the model search real files directly.
+	for mountName, relPath := range mounts {
+		if strings.HasPrefix(mountName, ".") || mountName == "uploads" || mountName == "outputs" {
+			continue
+		}
+		wsPath := filepath.Join(home, relPath)
+		if info, err := os.Stat(wsPath); err == nil && info.IsDir() {
+			if b.debug {
+				log.Printf("[native] using workspace mount %q as cwd: %s (was %s)", mountName, wsPath, cwd)
+			}
+			cwd = wsPath
+		}
+		break
+	}
+
 	// Remove empty env vars that might confuse auth (e.g. empty ANTHROPIC_API_KEY)
 	for k, v := range env {
 		if v == "" {
@@ -189,14 +208,33 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		}
 	}
 
-	return b.tracker.spawn(id, cmd, args, env, cwd, sessionPrefix, realSessionDir)
+	// Build mount path remappings: session/mnt/<mount> → real target path.
+	// After VM→real prefix mapping, stdin still contains paths like
+	// <realSessionDir>/mnt/<mount> which are symlinks that Glob can't follow.
+	// These remappings replace them with the actual target directories.
+	var mountRemap []pathRemap
+	for mountName, relPath := range mounts {
+		hostPath := filepath.Join(home, relPath)
+		mntPath := realSessionDir + "/mnt/" + mountName
+		if mntPath != hostPath {
+			mountRemap = append(mountRemap, pathRemap{
+				from: []byte(mntPath),
+				to:   []byte(hostPath),
+			})
+			if b.debug {
+				log.Printf("[native] mount remap: %s → %s", mntPath, hostPath)
+			}
+		}
+	}
+
+	return b.tracker.spawn(id, cmd, args, env, cwd, sessionPrefix, realSessionDir, mountRemap)
 }
 
-func (b *Backend) Kill(processID string) error {
+func (b *Backend) Kill(processID string, signal string) error {
 	if b.debug {
-		log.Printf("[native] kill %s", processID)
+		log.Printf("[native] kill %s (signal=%s)", processID, signal)
 	}
-	return b.tracker.kill(processID)
+	return b.tracker.kill(processID, signal)
 }
 
 func (b *Backend) WriteStdin(processID string, data []byte) error {
@@ -265,7 +303,7 @@ func (b *Backend) SubscribeEvents(name string, callback func(event interface{}))
 }
 
 func (b *Backend) GetDownloadStatus() string {
-	return "Ready"
+	return "ready"
 }
 
 // Shutdown kills all tracked processes.

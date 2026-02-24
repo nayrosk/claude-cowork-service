@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 )
@@ -70,19 +71,39 @@ func (h *Handler) Handle(conn net.Conn, payload []byte) {
 	case "getDownloadStatus":
 		h.handleGetDownloadStatus(conn, req)
 	default:
-		WriteError(conn, req.ID, -32601, "Method not found: "+req.Method)
+		if h.debug {
+			log.Printf("RPC: unknown method %q — returning success (passthrough)", req.Method)
+		}
+		WriteResponse(conn, nil)
 	}
 }
 
 // Parameter types for RPC methods
 
 type configureParams struct {
-	Memory int `json:"memory"`
-	CPUs   int `json:"cpus"`
+	MemoryMB int `json:"memoryMB"`
+	CPUCount int `json:"cpuCount"`
 }
 
 type vmNameParams struct {
 	Name string `json:"name"`
+}
+
+type createVMParams struct {
+	Name       string `json:"name"`
+	BundlePath string `json:"bundlePath"`
+	DiskSizeGB int    `json:"diskSizeGB"`
+}
+
+type startVMParams struct {
+	Name       string `json:"name"`
+	BundlePath string `json:"bundlePath"`
+	MemoryGB   int    `json:"memoryGB"`
+}
+
+type killParams struct {
+	ProcessID string `json:"id"`
+	Signal    string `json:"signal"`
 }
 
 type spawnParams struct {
@@ -135,7 +156,7 @@ func (h *Handler) handleConfigure(conn net.Conn, req Request) {
 		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
 		return
 	}
-	if err := h.backend.Configure(p.Memory, p.CPUs); err != nil {
+	if err := h.backend.Configure(p.MemoryMB, p.CPUCount); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return
 	}
@@ -143,12 +164,17 @@ func (h *Handler) handleConfigure(conn net.Conn, req Request) {
 }
 
 func (h *Handler) handleCreateVM(conn net.Conn, req Request) {
-	var p vmNameParams
+	var p createVMParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
 		return
 	}
-	if err := h.backend.CreateVM(p.Name); err != nil {
+	// Extract VM name from bundlePath if name is empty
+	name := p.Name
+	if name == "" && p.BundlePath != "" {
+		name = filepath.Base(p.BundlePath)
+	}
+	if err := h.backend.CreateVM(name); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return
 	}
@@ -156,12 +182,17 @@ func (h *Handler) handleCreateVM(conn net.Conn, req Request) {
 }
 
 func (h *Handler) handleStartVM(conn net.Conn, req Request) {
-	var p vmNameParams
+	var p startVMParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
 		return
 	}
-	if err := h.backend.StartVM(p.Name); err != nil {
+	// Extract VM name from bundlePath if name is empty
+	name := p.Name
+	if name == "" && p.BundlePath != "" {
+		name = filepath.Base(p.BundlePath)
+	}
+	if err := h.backend.StartVM(name); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return
 	}
@@ -233,12 +264,12 @@ func (h *Handler) handleSpawn(conn net.Conn, req Request) {
 }
 
 func (h *Handler) handleKill(conn net.Conn, req Request) {
-	var p processIDParams
+	var p killParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
 		return
 	}
-	if err := h.backend.Kill(p.ProcessID); err != nil {
+	if err := h.backend.Kill(p.ProcessID, p.Signal); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return
 	}
@@ -256,6 +287,12 @@ func (h *Handler) handleWriteStdin(conn net.Conn, req Request) {
 	}
 	if h.debug {
 		log.Printf("writeStdin processId=%s data=%q", p.ProcessID, p.Data)
+		// Log full stdin data to trace skill invocations
+		if len(p.Data) > 5000 {
+			log.Printf("writeStdin FULL (truncated): %s...END", p.Data[:5000])
+		} else {
+			log.Printf("writeStdin FULL: %s", p.Data)
+		}
 	}
 	if err := h.backend.WriteStdin(p.ProcessID, []byte(p.Data)); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
