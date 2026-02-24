@@ -4,6 +4,8 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+## 1.0.5 — 2026-02-24
+
 ### Added
 - **extract-cowork-svc script** — `scripts/extract-cowork-svc.sh` downloads the latest Claude Desktop Windows installer and extracts `cowork-svc.exe` into the project root for reverse engineering; idempotent via `.cowork-svc-version` marker; `make extract-cowork-svc` target added
 - **CI: manual release dispatch** — `workflow_dispatch` trigger with major/minor/patch selector; auto-computes next semver from latest tag, creates and pushes the tag to trigger the full release pipeline

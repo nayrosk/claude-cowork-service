@@ -118,11 +118,24 @@ jobs:
           go-version: '1.22'
           cache: false
 
-      - name: Create tag (workflow_dispatch only)
+      - name: Update CHANGELOG and create tag (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          VERSION="${RELEASE_VERSION#v}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Replace "## Unreleased" with versioned heading, add new empty Unreleased section
+          if grep -q '^## Unreleased' CHANGELOG.md; then
+            sed -i "s/^## Unreleased$/## ${VERSION} — ${DATE}/" CHANGELOG.md
+            sed -i "/^## ${VERSION//./\\.} — ${DATE}$/i ## Unreleased\n" CHANGELOG.md
+            git add CHANGELOG.md
+            git commit -m "Release ${RELEASE_VERSION}: update CHANGELOG"
+            git push origin main
+          fi
+
           git tag -a "${RELEASE_VERSION}" -m "Release ${RELEASE_VERSION}"
           git push origin "${RELEASE_VERSION}"
 
