@@ -94,6 +94,20 @@ sudo make install                  # installs to /usr/bin (default)
 
 > **Note:** No automatic updates. Pull and rebuild to update: `git pull && make && sudo make install`.
 
+## Claude Code Dependency
+
+Some Cowork features (e.g. delegating coding tasks) spawn a Claude Code CLI instance. For these features, **Claude Code must be installed** on the host.
+
+On Arch Linux, the AUR package `claude-code` is pulled in automatically as a dependency. If you prefer the npm-installed version (e.g. `npm i -g @anthropic-ai/claude-code`), which ships the minified JS source instead of a pre-built binary, you can uninstall the AUR package after installation — as long as `claude` is on your `$PATH`, Cowork will find it.
+
+Features that **require** Claude Code:
+- Delegated coding tasks (Claude Desktop spawns `claude` via `spawn` RPC)
+- Any Cowork session that executes CLI commands through the agent
+
+Features that **do not** require Claude Code:
+- The daemon itself (socket protocol, session management, event streaming)
+- Mount path handling and file operations within sessions
+
 ## Quick Start
 
 ```bash
